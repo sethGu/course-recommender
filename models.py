@@ -2,41 +2,91 @@ import pickle
 import stanfordnlp
 import os
 import numpy as np
+from random import sample
 from sklearn.metrics.pairwise import cosine_similarity
 
-np.set_printoptions(threshold=np.inf)   # print the whole matrix
+np.set_printoptions(threshold=np.inf)  # print the whole matrix
 
 course_code = "crawling/courseCode.pickle"
 course_detail = "crawling/courseDetail.pickle"
 raw_keyword = "rawKeyWord.pickle"
+student_GPA = "studentGPA.pickle"
 
 
 class Solutions:
     def __init__(self):
         pass
 
-    def cosineSimilarity(self, list1: list, list2: list) -> float:
+    def cosineSimilarity(self, list1: list, list2: list, kwd_num: int) -> float:
         a = np.array(list1)
         b = np.array(list2)
         # use library, operates on sets of vectors
-        aa = a.reshape(1, 981)
-        ba = b.reshape(1, 981)
+        aa = a.reshape(1, kwd_num)
+        ba = b.reshape(1, kwd_num)
         cos_lib = cosine_similarity(aa, ba)
         return cos_lib
 
-    def similarityMatrix(self, keyword_matrix: list):
+    def sparseMatrixPenalty(self, max_limit: int, min_limit: int, x: int):
+        return (x-min_limit+1)/(max_limit-min_limit+1)
+
+    def contentSimilarityMatrix(self, keyword_matrix: list, kwd_len: int):
+        # the keyword_matrix means the Keyword matrix of different courses
         res = []
         for i, li_i in enumerate(keyword_matrix):
             res.append([])
             for j, li_j in enumerate(keyword_matrix):
-                sim_ij = self.cosineSimilarity(li_i, li_j)
+                # the result of cosine similarity is typed as np.array, so float it
+                sim_ij = self.cosineSimilarity(li_i, li_j, kwd_len)
                 res[i].append(round(float(sim_ij), 4))
-        m = np.matrix(res)
-        return m
+        return np.array(res)
 
-    # I have 10,000 stundents and each one have selected 12 courses
-    def randomGPA(self):
+    def collaborativeSimilarityMatrix(self, sbj_mtx: list, ipt_li = []):
+        if ipt_li == []:
+            res, sbj_len = [], len(sbj_mtx[0])
+            for i, li_i in enumerate(sbj_mtx):
+                res.append([])
+                for j, li_j in enumerate(sbj_mtx):
+                    # the result of cosine similarity is typed as np.array, so float it
+                    sim_ij = self.cosineSimilarity(li_i, li_j, sbj_len)
+                    res[i].append(round(float(sim_ij), 4))
+        else:
+            res, sbj_len = [], len(sbj_mtx[0])
+            for i, li_i in enumerate(sbj_mtx):
+                sim_i = self.cosineSimilarity(ipt_li, li_i, sbj_len)
+                res.append(round(float(sim_i), 4))
+        return np.array(res)
+
+    def collaborativeInputRecommendation(self, ipt_dict: dict, sbj_mtx: list):
         pass
+
+    # I have pe number of students and each one have selected 12 courses
+    def randomGPA(self):
+        if not os.path.exists(student_GPA):
+            self.generateRandomGPA()  # check if first use, do this function
+        else:
+            pass
+
+    def generateRandomGPA(self, course_list: list, pe: int, course_num: int) -> list:
+        res = []
+        for i in range(pe):
+            sub_co = sample(course_list, course_num)
+            random_GPA = np.random.randint(3, 8, course_num)
+            # every member of the student GPA list is a tuple ('course code', mark)
+            tmp_dic = dict(zip(sub_co, random_GPA))
+            # print(len(sub_co),len(random_GPA),len(tmp_dic))
+            res.append(tmp_dic)
+        # the result is [[student gpa],[('course code', mark)]...]
+        return res
+
+    def subjectMatrixGeneration(self, subject_li: list, gpa_li: list, min_score=3, max_score=7):
+        res, subject_num = [], len(subject_li)
+        val_li = [0 for n in range(subject_num)]
+        for i in gpa_li:
+            tmp_dic = dict(zip(subject_li, val_li))
+            for j in i: tmp_dic[j] += self.sparseMatrixPenalty(max_score, min_score,i[j])
+            tmp_val = list(tmp_dic.values())
+            res.append(tmp_val)
+        return np.array(res)
 
 
 class Nlp:
@@ -101,19 +151,15 @@ class Nlp:
         # for i in de: res_li.remove(i)
         return res_li
 
-    def matrixGeneration(self) -> list:
+    def keywordMatrixGeneration(self) -> tuple:
         # use diction to speed up
         res, keyword_num = [], len(self.keywordGeneration())
         val_li = [0 for n in range(keyword_num)]
-        # res.append(self.subject_course)
         for i in self.raw_keyword_list:
             tmp_dic = dict(zip(self.keywordGeneration(), val_li))
-            for j in i: tmp_dic[j]+=1
+            for j in i: tmp_dic[j] += 1
             tmp_val = list(tmp_dic.values())
             res.append(tmp_val)
-        m = np.matrix(res)
-        print(tmp_dic)
-        # print(tmp_val)
-        # print(res)
-        # print(m.T)
-        return m
+        # here tmp_dic is like: {'introduction': 0, 'software': 0, 'engineering': 0, 'programming': 0...,
+        # which is {'keyword0': int, 'keyword1': int...}
+        return np.array(res), keyword_num
